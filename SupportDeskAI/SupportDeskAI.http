@@ -1,0 +1,34 @@
+@SupportDeskAI_HostAddress = http://localhost:5249
+
+### Create a ticket (FR-01)
+POST {{SupportDeskAI_HostAddress}}/api/tickets
+Content-Type: application/json
+
+{
+  "title": "Unable to access my account",
+  "description": "I reset my password but still cannot sign in."
+}
+
+### Create an invalid ticket -> 400
+POST {{SupportDeskAI_HostAddress}}/api/tickets
+Content-Type: application/json
+
+{
+  "title": "",
+  "description": "short"
+}
+
+### List tickets (FR-02)
+GET {{SupportDeskAI_HostAddress}}/api/tickets
+Accept: application/json
+
+### Get one ticket (FR-03) - paste an "id" from the list response
+@ticketId = 00000000-0000-0000-0000-000000000000
+GET {{SupportDeskAI_HostAddress}}/api/tickets/{{ticketId}}
+Accept: application/json
+
+### Unknown ticket -> 404
+GET {{SupportDeskAI_HostAddress}}/api/tickets/3f2b8c1e-0000-4000-8000-000000000000
+Accept: application/json
+
+###
