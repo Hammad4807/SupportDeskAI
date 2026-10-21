@@ -1,7 +1,6 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using SupportDeskAI.Data;
-using SupportDeskAI.ExceptionHandlers;
 using SupportDeskAI.Interfaces;
 using SupportDeskAI.Middlewares;
 using SupportDeskAI.Services;
