@@ -67,6 +67,22 @@ public class TicketsController : ControllerBase
         return result.IsSuccess ? Ok(result.Value) : ErrorResponse(result);
     }
 
+    // FR-06: POST /api/tickets/{id}/analyze
+    [HttpPost("{id:guid}/analyze")]
+    public async Task<ActionResult<TicketAnalysisResponse>> Analyze(Guid id, CancellationToken ct)
+    {
+        var result = await _ticketService.AnalyzeAsync(id, ct);
+        return result.IsSuccess ? Ok(result.Value) : ErrorResponse(result);
+    }
+
+    // FR-07: POST /api/tickets/{id}/draft-reply (returns a draft for human review; nothing is sent)
+    [HttpPost("{id:guid}/draft-reply")]
+    public async Task<ActionResult<DraftReplyResponse>> DraftReply(Guid id, CancellationToken ct)
+    {
+        var result = await _ticketService.DraftReplyAsync(id, ct);
+        return result.IsSuccess ? Ok(result.Value) : ErrorResponse(result);
+    }
+
     // Turns a failed ServiceResult into the matching HTTP error (ProblemDetails),
     // so every action reports errors the same way.
     private ActionResult ErrorResponse<T>(ServiceResult<T> result)

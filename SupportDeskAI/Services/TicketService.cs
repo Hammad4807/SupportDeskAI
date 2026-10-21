@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using SupportDeskAI.Constants;
 using SupportDeskAI.Data;
 using SupportDeskAI.DTOs;
 using SupportDeskAI.Enums;
@@ -18,19 +19,28 @@ public class TicketService : ITicketService
     private readonly IValidator<UpdateTicketRequest> _updateValidator;
     private readonly IValidator<UpdateTicketStatusRequest> _statusValidator;
     private readonly IValidator<TicketQueryParameters> _queryValidator;
+    private readonly IValidator<AiAnalysisResult> _aiAnalysisValidator;
+    private readonly IAiTicketService _ai;
+    private readonly ILogger<TicketService> _logger;
 
     public TicketService(
         AppDbContext db,
         IValidator<CreateTicketRequest> createValidator,
         IValidator<UpdateTicketRequest> updateValidator,
         IValidator<UpdateTicketStatusRequest> statusValidator,
-        IValidator<TicketQueryParameters> queryValidator)
+        IValidator<TicketQueryParameters> queryValidator,
+        IValidator<AiAnalysisResult> aiAnalysisValidator,
+        IAiTicketService ai,
+        ILogger<TicketService> logger)
     {
         _db = db;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
         _statusValidator = statusValidator;
         _queryValidator = queryValidator;
+        _aiAnalysisValidator = aiAnalysisValidator;
+        _ai = ai;
+        _logger = logger;
     }
 
     // The LINQ Select used by every query, written once. Expression<...> lets EF Core
@@ -142,5 +152,74 @@ public class TicketService : ITicketService
         await _db.SaveChangesAsync(ct);
 
         return ServiceResult<TicketResponse>.Success((await GetByIdAsync(id, ct))!);
+    }
+
+    // FR-06: ask the AI, validate its answer against the allowed values, and only then save it.
+    public async Task<ServiceResult<TicketAnalysisResponse>> AnalyzeAsync(Guid id, CancellationToken ct)
+    {
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (ticket is null)
+            return ServiceResult<TicketAnalysisResponse>.NotFound(id);
+
+        // 1. Ask the AI (timeouts / provider errors / unreadable answers come back as errors, not exceptions)
+        var aiResult = await _ai.AnalyzeTicketAsync(ticket.Title, ticket.Description, ct);
+        if (!aiResult.IsSuccess)
+            return ServiceResult<TicketAnalysisResponse>.Failure(aiResult.ErrorType, aiResult.ErrorMessage!);
+
+        // 2. Treat the AI answer as untrusted input: validate every value before using it
+        var analysis = aiResult.Value!;
+        var validation = await _aiAnalysisValidator.ValidateAsync(analysis, ct);
+        if (!validation.IsValid)
+        {
+            string problems = string.Join(" ", validation.Errors.Select(e => e.ErrorMessage));
+            _logger.LogWarning("Rejected AI analysis for ticket {TicketId}: {Problems}", id, problems);
+            return ServiceResult<TicketAnalysisResponse>.Failure(ServiceErrorType.AiInvalidOutput,
+                $"The AI suggested values that are not allowed, so nothing was saved. {problems}");
+        }
+
+        // 3. Valid: store the official spellings (e.g. "billing" -> "Billing") and save
+        ticket.Category = AiAllowedValues.Match(AiAllowedValues.Categories, analysis.Category);
+        ticket.Sentiment = AiAllowedValues.Match(AiAllowedValues.Sentiments, analysis.Sentiment);
+        ticket.Priority = Enum.Parse<TicketPriority>(analysis.Priority.Trim(), ignoreCase: true);
+        ticket.AiSummary = analysis.Summary.Trim();
+        ticket.SuggestedAction = analysis.SuggestedAction.Trim();
+        await _db.SaveChangesAsync(ct);
+
+        return ServiceResult<TicketAnalysisResponse>.Success(new TicketAnalysisResponse
+        {
+            TicketId = ticket.Id,
+            Category = ticket.Category!,
+            Priority = (int)ticket.Priority,
+            Sentiment = ticket.Sentiment!,
+            Summary = ticket.AiSummary,
+            SuggestedAction = ticket.SuggestedAction,
+            Provider = _ai.ProviderName
+        });
+    }
+
+    // FR-07: generate a draft reply for a human to review. It is NOT saved and NOT sent.
+    public async Task<ServiceResult<DraftReplyResponse>> DraftReplyAsync(Guid id, CancellationToken ct)
+    {
+        var ticket = await _db.Tickets.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (ticket is null)
+            return ServiceResult<DraftReplyResponse>.NotFound(id);
+
+        var aiResult = await _ai.DraftReplyAsync(ticket.Title, ticket.Description, ticket.Category, ct);
+        if (!aiResult.IsSuccess)
+            return ServiceResult<DraftReplyResponse>.Failure(aiResult.ErrorType, aiResult.ErrorMessage!);
+
+        string draft = aiResult.Value!.Trim();
+        if (draft.Length > AiAllowedValues.DraftMaxLength)
+            return ServiceResult<DraftReplyResponse>.Failure(ServiceErrorType.AiInvalidOutput,
+                $"The AI draft is longer than {AiAllowedValues.DraftMaxLength} characters.");
+
+        return ServiceResult<DraftReplyResponse>.Success(new DraftReplyResponse
+        {
+            TicketId = ticket.Id,
+            Draft = draft,
+            Provider = _ai.ProviderName,
+            IsSent = false,
+            GeneratedAt = DateTime.UtcNow
+        });
     }
 }
