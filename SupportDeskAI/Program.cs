@@ -16,6 +16,16 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Dependency injection: one TicketService per HTTP request.
 builder.Services.AddScoped<ITicketService, TicketService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+
+// AI provider (FR-06/07/10): "Ai:Provider" in appsettings.json picks the real Groq service or the Mock.
+// The Groq API key is read from user-secrets / environment variables, never from appsettings.json.
+builder.Services.AddHttpClient<GroqAiTicketService>(); // HttpClient comes from IHttpClientFactory
+builder.Services.AddScoped<MockAiTicketService>();
+builder.Services.AddScoped<IAiTicketService>(sp =>
+    builder.Configuration["Ai:Provider"] == "Mock"
+        ? sp.GetRequiredService<MockAiTicketService>()
+        : sp.GetRequiredService<GroqAiTicketService>());
 
 // Registers every FluentValidation validator in this project (e.g. CreateTicketRequestValidator).
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
@@ -25,6 +35,10 @@ var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get
 builder.Services.AddCors(options =>
     options.AddPolicy("Frontend", policy =>
         policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
+
+// Global exception handling (built-in .NET 8+): unhandled errors go to GlobalExceptionHandler.
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
@@ -36,8 +50,9 @@ app.UseCors("Frontend");
 //    and logs the final status code, including the 500 written by the error handler
 app.UseMiddleware<RequestLoggingMiddleware>();
 
-// 3. Global exception handling - catches errors from everything below it
-app.UseMiddleware<ExceptionHandlingMiddleware>();
+// 3. Global exception handling - catches errors from everything below it and calls GlobalExceptionHandler.
+//    Our handler already logs the error (with the traceId), so the framework's own error log is suppressed.
+app.UseExceptionHandler(new ExceptionHandlerOptions { SuppressDiagnosticsCallback = _ => true });
 
 if (app.Environment.IsDevelopment())
 {
