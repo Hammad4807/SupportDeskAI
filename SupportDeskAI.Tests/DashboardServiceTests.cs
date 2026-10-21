@@ -23,8 +23,8 @@ public class DashboardServiceTests
     {
         using var db = TestHelpers.CreateInMemoryDb();
         var tickets = TestHelpers.CreateTicketService(db); // Mock AI: password ticket -> High
-        var a = (await tickets.CreateAsync(TestHelpers.ValidCreateRequest(), _ct)).Value!;
-        var b = (await tickets.CreateAsync(TestHelpers.ValidCreateRequest(title: "Question about plans", description: "Which plan includes team support?"), _ct)).Value!;
+        var a = await tickets.CreateAsync(TestHelpers.ValidCreateRequest(), _ct);
+        var b = await tickets.CreateAsync(TestHelpers.ValidCreateRequest(title: "Question about plans", description: "Which plan includes team support?"), _ct);
         await tickets.CreateAsync(TestHelpers.ValidCreateRequest(title: "Third ticket"), _ct);
 
         await tickets.AnalyzeAsync(a.Id, _ct);

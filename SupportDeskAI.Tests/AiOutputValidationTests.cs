@@ -108,10 +108,9 @@ public class AiOutputValidationTests
 
         var result = await mock.AnalyzeTicketAsync("Unable to access my account", "I reset my password but still cannot sign in.", CancellationToken.None);
 
-        Assert.True(result.IsSuccess);
-        Assert.True(new AiAnalysisResultValidator().Validate(result.Value!).IsValid);
-        Assert.Equal("Account Access", result.Value!.Category);
-        Assert.StartsWith("[MOCK]", result.Value.Summary);
+        Assert.True(new AiAnalysisResultValidator().Validate(result).IsValid);
+        Assert.Equal("Account Access", result.Category);
+        Assert.StartsWith("[MOCK]", result.Summary);
     }
 
     // ---------- Personal data ----------
