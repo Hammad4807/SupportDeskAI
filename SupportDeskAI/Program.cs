@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using SupportDeskAI.Data;
+using SupportDeskAI.ExceptionHandlers;
 using SupportDeskAI.Interfaces;
 using SupportDeskAI.Middlewares;
 using SupportDeskAI.Services;
@@ -36,6 +37,10 @@ builder.Services.AddCors(options =>
     options.AddPolicy("Frontend", policy =>
         policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
 
+// Global exception handling (built-in .NET 8+): unhandled errors go to GlobalExceptionHandler.
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+
 var app = builder.Build();
 
 // ---------- Middleware pipeline (order matters!) ----------
@@ -46,8 +51,9 @@ app.UseCors("Frontend");
 //    and logs the final status code, including the 500 written by the error handler
 app.UseMiddleware<RequestLoggingMiddleware>();
 
-// 3. Global exception handling - catches errors from everything below it
-app.UseMiddleware<ExceptionHandlingMiddleware>();
+// 3. Global exception handling - catches errors from everything below it and calls GlobalExceptionHandler.
+//    Our handler already logs the error (with the traceId), so the framework's own error log is suppressed.
+app.UseExceptionHandler(new ExceptionHandlerOptions { SuppressDiagnosticsCallback = _ => true });
 
 if (app.Environment.IsDevelopment())
 {
