@@ -7,11 +7,11 @@ using SupportDeskAI.DTOs;
 using SupportDeskAI.Enums;
 using SupportDeskAI.Interfaces;
 using SupportDeskAI.Models;
-using SupportDeskAI.Results;
 
 namespace SupportDeskAI.Services;
 
 // Business logic for tickets. Controllers call this; this talks to the database.
+// Expected failures are thrown as built-in exceptions and turned into HTTP errors by GlobalExceptionHandler.
 public class TicketService : ITicketService
 {
     private readonly AppDbContext _db;
@@ -60,11 +60,10 @@ public class TicketService : ITicketService
         UpdatedAt = t.UpdatedAt
     };
 
-    public async Task<ServiceResult<TicketResponse>> CreateAsync(CreateTicketRequest request, CancellationToken ct)
+    public async Task<TicketResponse> CreateAsync(CreateTicketRequest request, CancellationToken ct)
     {
-        var validation = await _createValidator.ValidateAsync(request, ct);
-        if (!validation.IsValid)
-            return ServiceResult<TicketResponse>.ValidationFailed(validation.ToDictionary());
+        // Throws ValidationException (-> 400) when the request is invalid
+        await _createValidator.ValidateAndThrowAsync(request, ct);
 
         var ticket = new Ticket
         {
@@ -77,14 +76,12 @@ public class TicketService : ITicketService
         _db.Tickets.Add(ticket);
         await _db.SaveChangesAsync(ct); // CreatedAt is set automatically in AppDbContext
 
-        return ServiceResult<TicketResponse>.Success((await GetByIdAsync(ticket.Id, ct))!);
+        return await GetByIdAsync(ticket.Id, ct);
     }
 
-    public async Task<ServiceResult<IReadOnlyList<TicketResponse>>> GetAllAsync(TicketQueryParameters query, CancellationToken ct)
+    public async Task<IReadOnlyList<TicketResponse>> GetAllAsync(TicketQueryParameters query, CancellationToken ct)
     {
-        var validation = await _queryValidator.ValidateAsync(query, ct);
-        if (!validation.IsValid)
-            return ServiceResult<IReadOnlyList<TicketResponse>>.ValidationFailed(validation.ToDictionary());
+        await _queryValidator.ValidateAndThrowAsync(query, ct);
 
         // Start with all tickets and add a WHERE for each filter that was given.
         IQueryable<Ticket> tickets = _db.Tickets.AsNoTracking();
@@ -101,33 +98,29 @@ public class TicketService : ITicketService
             tickets = tickets.Where(t => t.Category != null && t.Category.ToLower() == category);
         }
 
-        var result = await tickets
+        return await tickets
             .OrderByDescending(t => t.CreatedAt)
             .Select(ToResponse)
             .ToListAsync(ct);
-
-        return ServiceResult<IReadOnlyList<TicketResponse>>.Success(result);
     }
 
-    public async Task<TicketResponse?> GetByIdAsync(Guid id, CancellationToken ct)
+    public async Task<TicketResponse> GetByIdAsync(Guid id, CancellationToken ct)
     {
-        return await _db.Tickets
+        var ticket = await _db.Tickets
             .AsNoTracking()
             .Where(t => t.Id == id)
             .Select(ToResponse)
             .FirstOrDefaultAsync(ct);
+
+        return ticket ?? throw TicketNotFound(id);
     }
 
-    public async Task<ServiceResult<TicketResponse>> UpdateAsync(Guid id, UpdateTicketRequest request, CancellationToken ct)
+    public async Task<TicketResponse> UpdateAsync(Guid id, UpdateTicketRequest request, CancellationToken ct)
     {
-        var validation = await _updateValidator.ValidateAsync(request, ct);
-        if (!validation.IsValid)
-            return ServiceResult<TicketResponse>.ValidationFailed(validation.ToDictionary());
+        await _updateValidator.ValidateAndThrowAsync(request, ct);
 
         // Tracked (no AsNoTracking), so EF Core notices the changes and SaveChanges writes an UPDATE.
-        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id, ct);
-        if (ticket is null)
-            return ServiceResult<TicketResponse>.NotFound(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw TicketNotFound(id);
 
         ticket.Title = request.Title.Trim();
         ticket.Description = request.Description.Trim();
@@ -135,46 +128,37 @@ public class TicketService : ITicketService
 
         await _db.SaveChangesAsync(ct); // UpdatedAt is set automatically in AppDbContext
 
-        return ServiceResult<TicketResponse>.Success((await GetByIdAsync(id, ct))!);
+        return await GetByIdAsync(id, ct);
     }
 
-    public async Task<ServiceResult<TicketResponse>> UpdateStatusAsync(Guid id, UpdateTicketStatusRequest request, CancellationToken ct)
+    public async Task<TicketResponse> UpdateStatusAsync(Guid id, UpdateTicketStatusRequest request, CancellationToken ct)
     {
-        var validation = await _statusValidator.ValidateAsync(request, ct);
-        if (!validation.IsValid)
-            return ServiceResult<TicketResponse>.ValidationFailed(validation.ToDictionary());
+        await _statusValidator.ValidateAndThrowAsync(request, ct);
 
-        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id, ct);
-        if (ticket is null)
-            return ServiceResult<TicketResponse>.NotFound(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw TicketNotFound(id);
 
         ticket.Status = (TicketStatus)request.Status;
         await _db.SaveChangesAsync(ct);
 
-        return ServiceResult<TicketResponse>.Success((await GetByIdAsync(id, ct))!);
+        return await GetByIdAsync(id, ct);
     }
 
     // FR-06: ask the AI, validate its answer against the allowed values, and only then save it.
-    public async Task<ServiceResult<TicketAnalysisResponse>> AnalyzeAsync(Guid id, CancellationToken ct)
+    public async Task<TicketAnalysisResponse> AnalyzeAsync(Guid id, CancellationToken ct)
     {
-        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id, ct);
-        if (ticket is null)
-            return ServiceResult<TicketAnalysisResponse>.NotFound(id);
+        var ticket = await _db.Tickets.FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw TicketNotFound(id);
 
-        // 1. Ask the AI (timeouts / provider errors / unreadable answers come back as errors, not exceptions)
-        var aiResult = await _ai.AnalyzeTicketAsync(ticket.Title, ticket.Description, ct);
-        if (!aiResult.IsSuccess)
-            return ServiceResult<TicketAnalysisResponse>.Failure(aiResult.ErrorType, aiResult.ErrorMessage!);
+        // 1. Ask the AI (timeouts / provider errors / unreadable answers are thrown by the AI service)
+        var analysis = await _ai.AnalyzeTicketAsync(ticket.Title, ticket.Description, ct);
 
         // 2. Treat the AI answer as untrusted input: validate every value before using it
-        var analysis = aiResult.Value!;
         var validation = await _aiAnalysisValidator.ValidateAsync(analysis, ct);
         if (!validation.IsValid)
         {
             string problems = string.Join(" ", validation.Errors.Select(e => e.ErrorMessage));
             _logger.LogWarning("Rejected AI analysis for ticket {TicketId}: {Problems}", id, problems);
-            return ServiceResult<TicketAnalysisResponse>.Failure(ServiceErrorType.AiInvalidOutput,
-                $"The AI suggested values that are not allowed, so nothing was saved. {problems}");
+            // InvalidDataException -> 502. Thrown BEFORE SaveChanges, so nothing is saved.
+            throw new InvalidDataException($"The AI suggested values that are not allowed, so nothing was saved. {problems}");
         }
 
         // 3. Valid: store the official spellings (e.g. "billing" -> "Billing") and save
@@ -185,7 +169,7 @@ public class TicketService : ITicketService
         ticket.SuggestedAction = analysis.SuggestedAction.Trim();
         await _db.SaveChangesAsync(ct);
 
-        return ServiceResult<TicketAnalysisResponse>.Success(new TicketAnalysisResponse
+        return new TicketAnalysisResponse
         {
             TicketId = ticket.Id,
             Category = ticket.Category!,
@@ -194,32 +178,28 @@ public class TicketService : ITicketService
             Summary = ticket.AiSummary,
             SuggestedAction = ticket.SuggestedAction,
             Provider = _ai.ProviderName
-        });
+        };
     }
 
     // FR-07: generate a draft reply for a human to review. It is NOT saved and NOT sent.
-    public async Task<ServiceResult<DraftReplyResponse>> DraftReplyAsync(Guid id, CancellationToken ct)
+    public async Task<DraftReplyResponse> DraftReplyAsync(Guid id, CancellationToken ct)
     {
-        var ticket = await _db.Tickets.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
-        if (ticket is null)
-            return ServiceResult<DraftReplyResponse>.NotFound(id);
+        var ticket = await _db.Tickets.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw TicketNotFound(id);
 
-        var aiResult = await _ai.DraftReplyAsync(ticket.Title, ticket.Description, ticket.Category, ct);
-        if (!aiResult.IsSuccess)
-            return ServiceResult<DraftReplyResponse>.Failure(aiResult.ErrorType, aiResult.ErrorMessage!);
-
-        string draft = aiResult.Value!.Trim();
+        string draft = (await _ai.DraftReplyAsync(ticket.Title, ticket.Description, ticket.Category, ct)).Trim();
         if (draft.Length > AiAllowedValues.DraftMaxLength)
-            return ServiceResult<DraftReplyResponse>.Failure(ServiceErrorType.AiInvalidOutput,
-                $"The AI draft is longer than {AiAllowedValues.DraftMaxLength} characters.");
+            throw new InvalidDataException($"The AI draft is longer than {AiAllowedValues.DraftMaxLength} characters.");
 
-        return ServiceResult<DraftReplyResponse>.Success(new DraftReplyResponse
+        return new DraftReplyResponse
         {
             TicketId = ticket.Id,
             Draft = draft,
             Provider = _ai.ProviderName,
             IsSent = false,
             GeneratedAt = DateTime.UtcNow
-        });
+        };
     }
+
+    // KeyNotFoundException -> 404 in GlobalExceptionHandler
+    private static KeyNotFoundException TicketNotFound(Guid id) => new($"No ticket exists with id {id}.");
 }

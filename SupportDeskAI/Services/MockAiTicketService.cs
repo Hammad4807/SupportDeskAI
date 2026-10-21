@@ -1,6 +1,5 @@
 using SupportDeskAI.DTOs;
 using SupportDeskAI.Interfaces;
-using SupportDeskAI.Results;
 
 namespace SupportDeskAI.Services;
 
@@ -11,7 +10,7 @@ public class MockAiTicketService : IAiTicketService
 {
     public string ProviderName => "Mock";
 
-    public Task<ServiceResult<AiAnalysisResult>> AnalyzeTicketAsync(string title, string description, CancellationToken ct)
+    public Task<AiAnalysisResult> AnalyzeTicketAsync(string title, string description, CancellationToken ct)
     {
         string text = $"{title} {description}".ToLower();
 
@@ -37,10 +36,10 @@ public class MockAiTicketService : IAiTicketService
             SuggestedAction = $"[MOCK] Review the {category.ToLower()} issue and contact the customer."
         };
 
-        return Task.FromResult(ServiceResult<AiAnalysisResult>.Success(analysis));
+        return Task.FromResult(analysis);
     }
 
-    public Task<ServiceResult<string>> DraftReplyAsync(string title, string description, string? category, CancellationToken ct)
+    public Task<string> DraftReplyAsync(string title, string description, string? category, CancellationToken ct)
     {
         string draft =
             "[MOCK DRAFT]\n" +
@@ -49,7 +48,7 @@ public class MockAiTicketService : IAiTicketService
             "We are sorry for the trouble. Our team is looking into it and will get back to you with the next steps.\n\n" +
             "Kind regards,\nThe Support Team";
 
-        return Task.FromResult(ServiceResult<string>.Success(draft));
+        return Task.FromResult(draft);
     }
 
     private static bool ContainsAny(string text, params string[] words) => words.Any(text.Contains);

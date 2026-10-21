@@ -168,14 +168,18 @@ Allowed sentiments: Positive, Neutral, Negative, Frustrated, Angry.
 Every error is a [ProblemDetails](https://www.rfc-editor.org/rfc/rfc9457) JSON object (`title`, `status`, `detail`, `traceId`).
 Stack traces and internal messages are only written to the server log.
 
-| Status | When |
-|---|---|
-| 400 | Validation failed (`errors` lists the messages per field) |
-| 404 | Ticket not found |
-| 500 | Unexpected error (caught by `UseExceptionHandler` + `GlobalExceptionHandler`) |
-| 502 | AI provider error, or AI output was malformed / used values that are not allowed (nothing is saved) |
-| 503 | AI not configured (`GROQ_API_KEY` missing) |
-| 504 | AI did not answer within `Ai:TimeoutSeconds` |
+Services throw **built-in .NET exceptions**; `GlobalExceptionHandler` (an `IExceptionHandler`, run by
+`app.UseExceptionHandler()`) is the one place that turns them into status codes:
+
+| Status | When | Exception |
+|---|---|---|
+| 400 | Validation failed (`errors` lists the messages per field) | `FluentValidation.ValidationException` |
+| 404 | Ticket not found | `KeyNotFoundException` |
+| 502 | AI provider error | `HttpRequestException` (StatusCode 502) |
+| 502 | AI output was malformed or used values that are not allowed (nothing is saved) | `InvalidDataException` |
+| 503 | AI not configured (`GROQ_API_KEY` missing) | `HttpRequestException` (StatusCode 503) |
+| 504 | AI did not answer within `Ai:TimeoutSeconds` | `TimeoutException` |
+| 500 | Any other, unexpected error (generic message) | anything else |
 
 Ticket create / read / update / status and the dashboard keep working when the AI provider is unavailable.
 
@@ -210,10 +214,9 @@ SupportDeskAI/                      ASP.NET Core Web API
   Interfaces/                       ITicketService, IDashboardService, IAiTicketService
   Data/                             AppDbContext (EF Core, automatic CreatedAt/UpdatedAt)
   Models/                           Ticket entity
-  Enums/                            TicketStatus, TicketPriority, ServiceErrorType
+  Enums/                            TicketStatus, TicketPriority
   DTOs/                             Request/response shapes (entities are never returned directly)
   Validators/                       FluentValidation rules (requests and AI output)
-  Results/                          ServiceResult<T>: success value or error type, without exceptions
   Constants/                        Allowed AI values
   Helpers/                          AiResponseParser, PersonalDataRedactor
   Middlewares/                      RequestLoggingMiddleware, GlobalExceptionHandler (IExceptionHandler, .NET 8+)
@@ -226,8 +229,9 @@ SupportDeskAI.Tests/                xUnit tests
 ```
 HTTP request
   -> CORS -> RequestLoggingMiddleware -> UseExceptionHandler (GlobalExceptionHandler)
-  -> Controller            (receives the DTO, calls the service, maps ServiceResult to a status code)
-  -> TicketService         (validates input, applies business rules)
+  -> Controller            (receives the DTO, calls the service, returns 200/201)
+  -> TicketService         (validates input, applies business rules; throws built-in exceptions on failure,
+                            which GlobalExceptionHandler turns into 400/404/502/503/504)
        -> AppDbContext      -> SQLite
        -> IAiTicketService  -> Groq or Mock   (answer parsed, validated, then saved)
 ```

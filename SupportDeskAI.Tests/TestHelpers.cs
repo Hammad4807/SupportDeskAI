@@ -3,9 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SupportDeskAI.Data;
 using SupportDeskAI.DTOs;
-using SupportDeskAI.Enums;
 using SupportDeskAI.Interfaces;
-using SupportDeskAI.Results;
 using SupportDeskAI.Services;
 using SupportDeskAI.Validators;
 
@@ -50,20 +48,18 @@ public static class TestHelpers
         new() { Title = title, Description = description };
 }
 
-// A fake AI whose answer each test chooses (valid, invalid, timeout, ...).
+// A fake AI whose answer each test chooses: a value to return, or an exception to throw (timeout, ...).
 public class StubAiTicketService : IAiTicketService
 {
-    public ServiceResult<AiAnalysisResult> AnalysisResult { get; set; } =
-        ServiceResult<AiAnalysisResult>.Failure(ServiceErrorType.AiProviderError, "Not set up.");
-
-    public ServiceResult<string> DraftResult { get; set; } =
-        ServiceResult<string>.Success("Hello, we are looking into it.");
+    public AiAnalysisResult? Analysis { get; set; }
+    public string Draft { get; set; } = "Hello, we are looking into it.";
+    public Exception? ExceptionToThrow { get; set; }
 
     public string ProviderName => "Stub";
 
-    public Task<ServiceResult<AiAnalysisResult>> AnalyzeTicketAsync(string title, string description, CancellationToken ct) =>
-        Task.FromResult(AnalysisResult);
+    public Task<AiAnalysisResult> AnalyzeTicketAsync(string title, string description, CancellationToken ct) =>
+        ExceptionToThrow is not null ? Task.FromException<AiAnalysisResult>(ExceptionToThrow) : Task.FromResult(Analysis!);
 
-    public Task<ServiceResult<string>> DraftReplyAsync(string title, string description, string? category, CancellationToken ct) =>
-        Task.FromResult(DraftResult);
+    public Task<string> DraftReplyAsync(string title, string description, string? category, CancellationToken ct) =>
+        ExceptionToThrow is not null ? Task.FromException<string>(ExceptionToThrow) : Task.FromResult(Draft);
 }
