@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
-namespace SupportDeskAI.ExceptionHandlers;
+namespace SupportDeskAI.Middlewares;
 
 // Global exception handler (built-in IExceptionHandler, .NET 8+).
 // app.UseExceptionHandler() catches any error that was not handled further down the pipeline
