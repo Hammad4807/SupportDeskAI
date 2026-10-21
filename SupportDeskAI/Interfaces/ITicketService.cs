@@ -12,4 +12,8 @@ public interface ITicketService
     Task<TicketResponse?> GetByIdAsync(Guid id, CancellationToken ct);
     Task<ServiceResult<TicketResponse>> UpdateAsync(Guid id, UpdateTicketRequest request, CancellationToken ct);
     Task<ServiceResult<TicketResponse>> UpdateStatusAsync(Guid id, UpdateTicketStatusRequest request, CancellationToken ct);
+
+    // AI: analysis is validated, then saved on the ticket. A draft reply is only returned, never saved or sent.
+    Task<ServiceResult<TicketAnalysisResponse>> AnalyzeAsync(Guid id, CancellationToken ct);
+    Task<ServiceResult<DraftReplyResponse>> DraftReplyAsync(Guid id, CancellationToken ct);
 }

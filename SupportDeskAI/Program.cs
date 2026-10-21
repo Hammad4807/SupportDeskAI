@@ -17,6 +17,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Dependency injection: one TicketService per HTTP request.
 builder.Services.AddScoped<ITicketService, TicketService>();
 
+// AI provider (FR-06/07/10): "Ai:Provider" in appsettings.json picks the real Groq service or the Mock.
+// The Groq API key is read from user-secrets / environment variables, never from appsettings.json.
+builder.Services.AddHttpClient<GroqAiTicketService>(); // HttpClient comes from IHttpClientFactory
+builder.Services.AddScoped<MockAiTicketService>();
+builder.Services.AddScoped<IAiTicketService>(sp =>
+    builder.Configuration["Ai:Provider"] == "Mock"
+        ? sp.GetRequiredService<MockAiTicketService>()
+        : sp.GetRequiredService<GroqAiTicketService>());
+
 // Registers every FluentValidation validator in this project (e.g. CreateTicketRequestValidator).
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
