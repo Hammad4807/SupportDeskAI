@@ -23,6 +23,12 @@ public class AppDbContext : DbContext
             entity.Property(t => t.Status).IsRequired();
             entity.Property(t => t.Priority).IsRequired();
 
+            // AI analysis fields (nullable until the ticket is analyzed)
+            entity.Property(t => t.Category).HasMaxLength(100);
+            entity.Property(t => t.Sentiment).HasMaxLength(50);
+            entity.Property(t => t.AiSummary).HasMaxLength(500);
+            entity.Property(t => t.SuggestedAction).HasMaxLength(500);
+
             // SQLite does not remember that a date is UTC, so mark it as UTC when reading.
             // Without this the JSON has no "Z" and the browser treats the time as local.
             entity.Property(t => t.CreatedAt)
