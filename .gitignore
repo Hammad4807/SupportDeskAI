@@ -486,3 +486,7 @@ $RECYCLE.BIN/
 *.db-shm
 *.db-wal
 
+
+# Local environment files with real secrets (the .env.example template IS committed)
+.env
+.env.local

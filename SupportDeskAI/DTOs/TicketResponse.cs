@@ -11,6 +11,12 @@ public class TicketResponse
     public int Status { get; set; }
     public int Priority { get; set; }
 
+    // AI analysis results; null until the ticket has been analyzed.
+    public string? Category { get; set; }
+    public string? Sentiment { get; set; }
+    public string? AiSummary { get; set; }
+    public string? SuggestedAction { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }
