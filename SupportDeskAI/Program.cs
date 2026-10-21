@@ -16,6 +16,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Dependency injection: one TicketService per HTTP request.
 builder.Services.AddScoped<ITicketService, TicketService>();
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 
 // AI provider (FR-06/07/10): "Ai:Provider" in appsettings.json picks the real Groq service or the Mock.
 // The Groq API key is read from user-secrets / environment variables, never from appsettings.json.
