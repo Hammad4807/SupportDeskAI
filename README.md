@@ -172,7 +172,7 @@ Stack traces and internal messages are only written to the server log.
 |---|---|
 | 400 | Validation failed (`errors` lists the messages per field) |
 | 404 | Ticket not found |
-| 500 | Unexpected error (caught by `ExceptionHandlingMiddleware`) |
+| 500 | Unexpected error (caught by `UseExceptionHandler` + `GlobalExceptionHandler`) |
 | 502 | AI provider error, or AI output was malformed / used values that are not allowed (nothing is saved) |
 | 503 | AI not configured (`GROQ_API_KEY` missing) |
 | 504 | AI did not answer within `Ai:TimeoutSeconds` |
@@ -216,7 +216,8 @@ SupportDeskAI/                      ASP.NET Core Web API
   Results/                          ServiceResult<T>: success value or error type, without exceptions
   Constants/                        Allowed AI values
   Helpers/                          AiResponseParser, PersonalDataRedactor
-  Middlewares/                      RequestLoggingMiddleware, ExceptionHandlingMiddleware
+  Middlewares/                      RequestLoggingMiddleware
+  ExceptionHandlers/                GlobalExceptionHandler (IExceptionHandler, .NET 8+)
   Migrations/                       EF Core migrations
 SupportDeskAI.Tests/                xUnit tests
 ```
@@ -225,7 +226,7 @@ SupportDeskAI.Tests/                xUnit tests
 
 ```
 HTTP request
-  -> CORS -> RequestLoggingMiddleware -> ExceptionHandlingMiddleware
+  -> CORS -> RequestLoggingMiddleware -> UseExceptionHandler (GlobalExceptionHandler)
   -> Controller            (receives the DTO, calls the service, maps ServiceResult to a status code)
   -> TicketService         (validates input, applies business rules)
        -> AppDbContext      -> SQLite
