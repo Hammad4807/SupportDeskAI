@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using SupportDeskAI.Data;
 using SupportDeskAI.Interfaces;
+using SupportDeskAI.Middlewares;
 using SupportDeskAI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,6 +28,17 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// ---------- Middleware pipeline (order matters!) ----------
+// 1. CORS first, so even error responses (500) carry the CORS headers the browser needs
+app.UseCors("Frontend");
+
+// 2. Request logging - outermost of our two, so it times the whole request
+//    and logs the final status code, including the 500 written by the error handler
+app.UseMiddleware<RequestLoggingMiddleware>();
+
+// 3. Global exception handling - catches errors from everything below it
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -38,8 +50,7 @@ else
     app.UseHttpsRedirection();
 }
 
-app.UseCors("Frontend");
-
+// 4. Endpoint execution (controllers)
 app.MapControllers();
 
 app.Run();
