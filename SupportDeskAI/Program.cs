@@ -1,34 +1,13 @@
-using FluentValidation;
-using Microsoft.EntityFrameworkCore;
-using SupportDeskAI.Data;
-using SupportDeskAI.Interfaces;
+using SupportDeskAI.Configuration;
 using SupportDeskAI.Middlewares;
-using SupportDeskAI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
-// Database: SQLite file, path comes from appsettings.json.
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
-
-// Dependency injection: one TicketService per HTTP request.
-builder.Services.AddScoped<ITicketService, TicketService>();
-builder.Services.AddScoped<IDashboardService, DashboardService>();
-
-// AI provider (FR-06/07/10): "Ai:Provider" in appsettings.json picks the real Groq service or the Mock.
-// The Groq API key is read from user-secrets / environment variables, never from appsettings.json.
-builder.Services.AddHttpClient<GroqAiTicketService>(); // HttpClient comes from IHttpClientFactory
-builder.Services.AddScoped<MockAiTicketService>();
-builder.Services.AddScoped<IAiTicketService>(sp =>
-    builder.Configuration["Ai:Provider"] == "Mock"
-        ? sp.GetRequiredService<MockAiTicketService>()
-        : sp.GetRequiredService<GroqAiTicketService>());
-
-// Registers every FluentValidation validator in this project (e.g. CreateTicketRequestValidator).
-builder.Services.AddValidatorsFromAssemblyContaining<Program>();
+// Database, services, AI provider and validators - shared with the MCP server (SupportDeskAI.Mcp).
+ServiceRegistration.AddSupportDeskServices(builder.Services, builder.Configuration);
 
 // CORS: allow the React frontend (different port) to call this API.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];

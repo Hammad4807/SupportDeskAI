@@ -106,6 +106,23 @@ public class TicketServiceTests
         await Assert.ThrowsAsync<ValidationException>(() => service.GetAllAsync(new TicketQueryParameters { Priority = 9 }, _ct));
     }
 
+    [Fact]
+    public async Task GetAll_FiltersByCategory_AndRejectsUnknownCategory()
+    {
+        using var db = TestHelpers.CreateInMemoryDb();
+        var service = TestHelpers.CreateTicketService(db); // Mock AI: password ticket -> Account Access
+        var analyzed = await service.CreateAsync(TestHelpers.ValidCreateRequest(), _ct);
+        await service.CreateAsync(TestHelpers.ValidCreateRequest(title: "Second ticket"), _ct);
+        await service.AnalyzeAsync(analyzed.Id, _ct);
+
+        var accountAccess = await service.GetAllAsync(new TicketQueryParameters { Category = (int)TicketCategory.AccountAccess }, _ct);
+        var billing = await service.GetAllAsync(new TicketQueryParameters { Category = (int)TicketCategory.Billing }, _ct);
+
+        Assert.Equal(analyzed.Id, Assert.Single(accountAccess).Id);
+        Assert.Empty(billing);
+        await Assert.ThrowsAsync<ValidationException>(() => service.GetAllAsync(new TicketQueryParameters { Category = 99 }, _ct));
+    }
+
     // ---------- AI analysis (FR-06, FR-09) ----------
 
     [Fact]
@@ -127,7 +144,8 @@ public class TicketServiceTests
 
         Assert.Equal("Stub", result.Provider);
         var saved = await db.Tickets.AsNoTracking().SingleAsync(_ct);
-        Assert.Equal("Billing", saved.Category);
+        Assert.Equal(TicketCategory.Billing, saved.Category);           // "billing" -> enum
+        Assert.Equal((int)TicketCategory.Billing, result.Category);     // API returns the number
         Assert.Equal("Angry", saved.Sentiment);
         Assert.Equal(TicketPriority.High, saved.Priority);
         Assert.Equal("Charged twice.", saved.AiSummary);

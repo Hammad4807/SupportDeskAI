@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "supportdesk-ai": {
+      "command": "C:\\path\\to\\SupportDeskAI\\SupportDeskAI.Mcp\\bin\\Debug\\net10.0\\SupportDeskAI.Mcp.exe",
+      "args": [],
+      "env": {
+        "Ai__Provider": "Groq"
+      }
+    }
+  }
+}
