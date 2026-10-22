@@ -1,18 +1,27 @@
+using SupportDeskAI.Enums;
+
 namespace SupportDeskAI.Constants;
 
 // The only values the AI is allowed to return. Anything else is rejected, never saved.
 public static class AiAllowedValues
 {
-    public static readonly string[] Categories =
-    [
-        "Account Access",
-        "Billing",
-        "Technical Issue",
-        "Bug Report",
-        "Feature Request",
-        "General Inquiry",
-        "Other"
-    ];
+    // The AI answers with these readable names; each one maps to the TicketCategory saved in the database.
+    // Case-insensitive, so "billing" also matches "Billing".
+    public static readonly IReadOnlyDictionary<string, TicketCategory> Categories =
+        new Dictionary<string, TicketCategory>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Account Access"] = TicketCategory.AccountAccess,
+            ["Billing"] = TicketCategory.Billing,
+            ["Technical Issue"] = TicketCategory.TechnicalIssue,
+            ["Bug Report"] = TicketCategory.BugReport,
+            ["Feature Request"] = TicketCategory.FeatureRequest,
+            ["General Inquiry"] = TicketCategory.GeneralInquiry,
+            ["Other"] = TicketCategory.Other
+        };
+
+    // TicketCategory.BugReport -> "Bug Report" (used when sending the category back to the AI)
+    public static string CategoryName(TicketCategory category) =>
+        Categories.First(pair => pair.Value == category).Key;
 
     public static readonly string[] Sentiments =
     [

@@ -12,8 +12,8 @@ public class AiAnalysisResultValidator : AbstractValidator<AiAnalysisResult>
     public AiAnalysisResultValidator()
     {
         RuleFor(x => x.Category)
-            .Must(c => AiAllowedValues.Match(AiAllowedValues.Categories, c) is not null)
-            .WithMessage(x => $"Category '{x.Category}' is not one of: {string.Join(", ", AiAllowedValues.Categories)}.");
+            .Must(c => c is not null && AiAllowedValues.Categories.ContainsKey(c.Trim()))
+            .WithMessage(x => $"Category '{x.Category}' is not one of: {string.Join(", ", AiAllowedValues.Categories.Keys)}.");
 
         // Only the names Low/Medium/High/Critical are accepted (not numbers like "7").
         RuleFor(x => x.Priority)

@@ -4,7 +4,7 @@ namespace SupportDeskAI.DTOs;
 public class TicketAnalysisResponse
 {
     public Guid TicketId { get; set; }
-    public string Category { get; set; } = string.Empty;
+    public int Category { get; set; }
     public int Priority { get; set; } 
     public string Sentiment { get; set; } = string.Empty;
     public string Summary { get; set; } = string.Empty;

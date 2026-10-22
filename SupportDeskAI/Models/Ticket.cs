@@ -16,7 +16,7 @@ public class Ticket
     public TicketPriority Priority { get; set; } = TicketPriority.Medium;
 
     // Filled in by AI analysis (only after the AI output is validated), so null until analyzed.
-    public string? Category { get; set; }
+    public TicketCategory? Category { get; set; }
     public string? Sentiment { get; set; }
     public string? AiSummary { get; set; }
     public string? SuggestedAction { get; set; }

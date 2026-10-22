@@ -46,7 +46,7 @@ public class GroqAiTicketService : IAiTicketService
         string systemPrompt =
             "You are a support-ticket triage assistant. Analyze the ticket and reply with ONLY a JSON object, no other text:\n" +
             "{\"category\": string, \"priority\": string, \"sentiment\": string, \"summary\": string, \"suggestedAction\": string}\n" +
-            $"category must be exactly one of: {string.Join(", ", AiAllowedValues.Categories)}.\n" +
+            $"category must be exactly one of: {string.Join(", ", AiAllowedValues.Categories.Keys)}.\n" +
             "priority must be exactly one of: Low, Medium, High, Critical.\n" +
             $"sentiment must be exactly one of: {string.Join(", ", AiAllowedValues.Sentiments)}.\n" +
             "summary: one sentence, max 300 characters. suggestedAction: one sentence for the support agent, max 300 characters.\n" +
