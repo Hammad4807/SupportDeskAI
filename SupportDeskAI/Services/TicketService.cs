@@ -52,7 +52,7 @@ public class TicketService : ITicketService
         Description = t.Description,
         Status = (int)t.Status,
         Priority = (int)t.Priority,
-        Category = t.Category,
+        Category = (int?)t.Category,
         Sentiment = t.Sentiment,
         AiSummary = t.AiSummary,
         SuggestedAction = t.SuggestedAction,
@@ -92,11 +92,8 @@ public class TicketService : ITicketService
         if (query.Priority.HasValue)
             tickets = tickets.Where(t => t.Priority == (TicketPriority)query.Priority.Value);
 
-        if (!string.IsNullOrWhiteSpace(query.Category))
-        {
-            var category = query.Category.Trim().ToLower();
-            tickets = tickets.Where(t => t.Category != null && t.Category.ToLower() == category);
-        }
+        if (query.Category.HasValue)
+            tickets = tickets.Where(t => t.Category == (TicketCategory)query.Category.Value);
 
         return await tickets
             .OrderByDescending(t => t.CreatedAt)
@@ -162,7 +159,7 @@ public class TicketService : ITicketService
         }
 
         // 3. Valid: store the official spellings (e.g. "billing" -> "Billing") and save
-        ticket.Category = AiAllowedValues.Match(AiAllowedValues.Categories, analysis.Category);
+        ticket.Category = AiAllowedValues.Categories[analysis.Category.Trim()]; // "Billing" -> TicketCategory.Billing
         ticket.Sentiment = AiAllowedValues.Match(AiAllowedValues.Sentiments, analysis.Sentiment);
         ticket.Priority = Enum.Parse<TicketPriority>(analysis.Priority.Trim(), ignoreCase: true);
         ticket.AiSummary = analysis.Summary.Trim();
@@ -172,7 +169,7 @@ public class TicketService : ITicketService
         return new TicketAnalysisResponse
         {
             TicketId = ticket.Id,
-            Category = ticket.Category!,
+            Category = (int)ticket.Category,
             Priority = (int)ticket.Priority,
             Sentiment = ticket.Sentiment!,
             Summary = ticket.AiSummary,
@@ -186,7 +183,9 @@ public class TicketService : ITicketService
     {
         var ticket = await _db.Tickets.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw TicketNotFound(id);
 
-        string draft = (await _ai.DraftReplyAsync(ticket.Title, ticket.Description, ticket.Category, ct)).Trim();
+        // The AI gets the readable category name ("Bug Report"), not the number
+        string? categoryName = ticket.Category.HasValue ? AiAllowedValues.CategoryName(ticket.Category.Value) : null;
+        string draft = (await _ai.DraftReplyAsync(ticket.Title, ticket.Description, categoryName, ct)).Trim();
         if (draft.Length > AiAllowedValues.DraftMaxLength)
             throw new InvalidDataException($"The AI draft is longer than {AiAllowedValues.DraftMaxLength} characters.");
 

@@ -23,8 +23,8 @@ public class AppDbContext : DbContext
             entity.Property(t => t.Status).IsRequired();
             entity.Property(t => t.Priority).IsRequired();
 
-            // AI analysis fields (nullable until the ticket is analyzed)
-            entity.Property(t => t.Category).HasMaxLength(100);
+            // AI analysis fields (nullable until the ticket is analyzed).
+            // Category is an enum, stored as an integer like Status and Priority.
             entity.Property(t => t.Sentiment).HasMaxLength(50);
             entity.Property(t => t.AiSummary).HasMaxLength(500);
             entity.Property(t => t.SuggestedAction).HasMaxLength(500);
@@ -37,6 +37,7 @@ public class AppDbContext : DbContext
                 .HasConversion(v => v, v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v);
 
             entity.HasIndex(t => t.Status);
+            entity.HasIndex(t => t.Category);
             entity.HasIndex(t => t.Priority);
         });
     }

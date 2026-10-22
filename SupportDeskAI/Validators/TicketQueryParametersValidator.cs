@@ -18,6 +18,8 @@ public class TicketQueryParametersValidator : AbstractValidator<TicketQueryParam
             .WithMessage("Priority must be 0 (Low), 1 (Medium), 2 (High) or 3 (Critical).");
 
         RuleFor(x => x.Category)
-            .MaximumLength(100).WithMessage("Category must not exceed 100 characters.");
+            .Must(c => c is null || Enum.IsDefined(typeof(TicketCategory), c.Value))
+            .WithMessage("Category must be 0 (Account Access), 1 (Billing), 2 (Technical Issue), 3 (Bug Report), " +
+                         "4 (Feature Request), 5 (General Inquiry) or 6 (Other).");
     }
 }

@@ -27,9 +27,8 @@ namespace SupportDeskAI.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Category")
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
+                    b.Property<int?>("Category")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
@@ -62,6 +61,8 @@ namespace SupportDeskAI.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Category");
 
                     b.HasIndex("Priority");
 

@@ -19,3 +19,14 @@ public enum TicketPriority
     High,
     Critical
 }
+
+public enum TicketCategory
+{
+    AccountAccess,
+    Billing,
+    TechnicalIssue,
+    BugReport,
+    FeatureRequest,
+    GeneralInquiry,
+    Other
+}
