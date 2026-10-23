@@ -31,6 +31,7 @@ The optional React frontend lives in a separate repository: **SupportDeskAI-Web*
 | .NET SDK | 10.0 | `dotnet --version` |
 | EF Core tools | 10.x | `dotnet tool install --global dotnet-ef` (once) |
 | Groq API key | optional | Free key from https://console.groq.com/keys. Without it, use the **Mock** AI provider. |
+| Node.js | 20+ (only for MCP Inspector) | `node --version` |
 
 No database server is needed: SQLite stores everything in one file (`supportdesk.db`).
 
@@ -40,21 +41,32 @@ No database server is needed: SQLite stores everything in one file (`supportdesk
 
 ```powershell
 git clone <this-repository-url>
-cd SupportDeskAI/SupportDeskAI          # the folder that contains SupportDeskAI.csproj
+cd SupportDeskAI                        # the folder that contains SupportDeskAI.slnx
 
-# 1. Create the database (creates supportdesk.db from the migrations)
+# 1. Restore packages and build everything (API, MCP server, tests).
+#    Needed once before "dotnet ef", which cannot read a project whose packages are not restored yet.
+dotnet build
+
+# 2. Create the database (creates SupportDeskAI/supportdesk.db from the migrations)
+cd SupportDeskAI                        # the folder that contains SupportDeskAI.csproj
 dotnet ef database update
 
-# 2. Configure the AI (choose one)
+# 3. Configure the AI (choose one)
 dotnet user-secrets set "GROQ_API_KEY" "your-groq-api-key-here"   # real AI
 #   or open appsettings.json and set  "Ai": { "Provider": "Mock" }  # no key needed
 
-# 3. Run
+# 4. Run
 dotnet run --launch-profile http
 ```
 
 Open **http://localhost:5249/swagger** to try every endpoint.
 In Visual Studio: open `SupportDeskAI.slnx`, choose the **http** profile and press **F5** (Swagger opens automatically).
+
+Notes:
+- If `dotnet ef database update` fails with *"Unable to retrieve project metadata"*, run `dotnet build` in the solution
+  folder first (step 1).
+- The database is **not** created automatically when the API starts; step 2 is required on every new clone.
+- Swagger is only enabled in the `Development` environment (both launch profiles set it).
 
 ---
 
@@ -183,6 +195,9 @@ Services throw **built-in .NET exceptions**; `GlobalExceptionHandler` (an `IExce
 
 Ticket create / read / update / status and the dashboard keep working when the AI provider is unavailable.
 
+An unknown id or an id that is not a GUID in the URL returns **404**. A request that the client cancels
+(e.g. page reload) is not an error: `RequestLoggingMiddleware` logs it as *"was cancelled by the client"* (status 499).
+
 ---
 
 ## Tests
@@ -203,6 +218,84 @@ The xUnit project `SupportDeskAI.Tests` uses an in-memory SQLite database and a 
 
 ---
 
+## MCP server
+
+`SupportDeskAI.Mcp` is a separate console project in the solution. It uses the official C# MCP SDK
+(`ModelContextProtocol` NuGet package) with the **stdio** transport: the MCP client starts the program and talks to it
+over stdin/stdout. It registers the **same services** as the API (`Configuration/ServiceRegistration.cs`), so every
+tool calls the same `TicketService` / `DashboardService` as the REST endpoints, with the same validation.
+
+### Tools
+
+| Tool | Parameters | Same as |
+|---|---|---|
+| `create_ticket` | `title`, `description` | `POST /api/tickets` |
+| `list_tickets` | optional `status`, `priority`, `category` | `GET /api/tickets` |
+| `get_ticket` | `id` | `GET /api/tickets/{id}` |
+| `update_ticket` | `id`, `title`, `description`, `priority` | `PUT /api/tickets/{id}` |
+| `update_ticket_status` | `id`, `status` | `PATCH /api/tickets/{id}/status` |
+| `analyze_ticket` | `id` | `POST /api/tickets/{id}/analyze` |
+| `draft_reply` | `id` | `POST /api/tickets/{id}/draft-reply` (draft only, never sent) |
+| `get_dashboard_summary` | – | `GET /api/dashboard/summary` |
+
+Values are names, not numbers: status `Open | InProgress | Resolved | Closed`, priority `Low | Medium | High | Critical`,
+category `Account Access | Billing | Technical Issue | Bug Report | Feature Request | General Inquiry | Other`.
+There is no delete tool. Invalid arguments, unknown ids and AI problems are returned as tool errors
+(`isError: true`) with a short message, never with a stack trace.
+
+### Setup
+
+1. Create the database once (see [Database and migrations](#database-and-migrations)). The MCP server uses the
+   **same** `SupportDeskAI/supportdesk.db` as the API (set in `SupportDeskAI.Mcp/appsettings.json`).
+2. The AI key is shared with the API: both projects use the same user-secrets id, so
+   `dotnet user-secrets set "GROQ_API_KEY" "..."` in the `SupportDeskAI` folder is enough.
+   Without a key, set `"Ai": { "Provider": "Mock" }` in `SupportDeskAI.Mcp/appsettings.json`.
+3. Build it (stop the API first if it is running, otherwise its files are locked):
+   ```powershell
+   cd SupportDeskAI          # the folder that contains SupportDeskAI.slnx
+   dotnet build SupportDeskAI.Mcp
+   ```
+   The server is `SupportDeskAI.Mcp\bin\Debug\net10.0\SupportDeskAI.Mcp.exe`.
+
+### Connect with MCP Inspector
+
+```powershell
+npx @modelcontextprotocol/inspector "C:\full\path\to\SupportDeskAI.Mcp\bin\Debug\net10.0\SupportDeskAI.Mcp.exe"
+```
+Open the URL it prints, click **Connect**, then **Tools → List Tools**, choose a tool (e.g. `list_tickets`,
+`analyze_ticket`), fill in the arguments and click **Run Tool**.
+
+Command-line check without the browser:
+```powershell
+npx @modelcontextprotocol/inspector --cli "C:\full\path\to\SupportDeskAI.Mcp.exe" --method tools/list
+npx @modelcontextprotocol/inspector --cli "C:\full\path\to\SupportDeskAI.Mcp.exe" --method tools/call --tool-name get_dashboard_summary
+```
+
+### Connect with Claude Desktop
+
+Open **Settings → Developer → Edit Config** (file `%APPDATA%\Claude\claude_desktop_config.json`), add the server
+from [`SupportDeskAI.Mcp/mcp-client-config.example.json`](SupportDeskAI.Mcp/mcp-client-config.example.json) with your
+full path to the `.exe`, and restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "supportdesk-ai": {
+      "command": "C:\\path\\to\\SupportDeskAI\\SupportDeskAI.Mcp\\bin\\Debug\\net10.0\\SupportDeskAI.Mcp.exe",
+      "args": [],
+      "env": { "Ai__Provider": "Groq" }
+    }
+  }
+}
+```
+
+Then ask, for example: *"List the open SupportDesk tickets and analyze the newest one."*
+
+Any setting can be overridden in `env`, e.g. `"Ai__Provider": "Mock"` or
+`"ConnectionStrings__DefaultConnection": "Data Source=C:\\path\\to\\supportdesk.db"`.
+
+---
+
 ## Project structure
 
 ```
@@ -214,7 +307,7 @@ SupportDeskAI/                      ASP.NET Core Web API
   Interfaces/                       ITicketService, IDashboardService, IAiTicketService
   Data/                             AppDbContext (EF Core, automatic CreatedAt/UpdatedAt)
   Models/                           Ticket entity
-  Enums/                            TicketStatus, TicketPriority
+  Enums/                            TicketStatus, TicketPriority, TicketCategory (TicketEnums.cs)
   DTOs/                             Request/response shapes (entities are never returned directly)
   Validators/                       FluentValidation rules (requests and AI output)
   Constants/                        Allowed AI values
@@ -247,3 +340,8 @@ HTTP request
   still sent to the AI provider, so only test data should be used.
 - The AI can still choose a wrong category or priority within the allowed values; agents can correct them with `PUT`.
 - SQLite is meant for local development; it is not suited to many concurrent users.
+- The database is not migrated automatically at startup; run `dotnet ef database update` after cloning and after
+  pulling new migrations.
+- The MCP server finds the database through a path relative to its build folder (`bin\Debug\net10.0`); a published
+  or moved copy needs `ConnectionStrings__DefaultConnection` set to a full path.
+- While an MCP client (e.g. Claude Desktop) is running the server, `SupportDeskAI.Mcp` cannot be rebuilt (file lock).
