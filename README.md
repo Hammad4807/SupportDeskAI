@@ -5,6 +5,9 @@ Agents can create, view, update, filter and close tickets. An AI service (Groq, 
 **analyze** a ticket (category, priority, sentiment, summary, suggested action) and **draft a reply** for an agent
 to review. **AI replies are never sent automatically.**
 
+The same ticket operations are also exposed as an **MCP server** (`SupportDeskAI.Mcp`), so any MCP-compatible
+LLM client (Claude Desktop, MCP Inspector, ...) can use them.
+
 The optional React frontend lives in a separate repository: **SupportDeskAI-Web**.
 
 ---
@@ -18,6 +21,7 @@ The optional React frontend lives in a separate repository: **SupportDeskAI-Web*
 - [Endpoints](#endpoints)
 - [Error responses](#error-responses)
 - [Tests](#tests)
+- [MCP server](#mcp-server)
 - [Project structure](#project-structure)
 - [How a request flows](#how-a-request-flows)
 - [Known limitations](#known-limitations)
@@ -108,8 +112,10 @@ To start with an empty database: stop the API, delete `supportdesk.db*`, run `do
 The `.db` file is ignored by Git, so every clone creates its own database.
 
 **Ticket fields:** `Id` (GUID), `Title`, `Description`, `Status` (0 Open, 1 InProgress, 2 Resolved, 3 Closed),
-`Priority` (0 Low, 1 Medium, 2 High, 3 Critical), `Category`, `Sentiment`, `AiSummary`, `SuggestedAction`
-(null until analyzed), `CreatedAt`, `UpdatedAt` (UTC; `UpdatedAt` is null until the ticket is modified).
+`Priority` (0 Low, 1 Medium, 2 High, 3 Critical),
+`Category` (0 Account Access, 1 Billing, 2 Technical Issue, 3 Bug Report, 4 Feature Request, 5 General Inquiry, 6 Other),
+`Sentiment`, `AiSummary`, `SuggestedAction` (null until analyzed), `CreatedAt`, `UpdatedAt`
+(UTC; `UpdatedAt` is null until the ticket is modified). Status, Priority and Category are enums stored and sent as numbers.
 
 ---
 
@@ -151,12 +157,13 @@ PATCH /api/tickets/{id}/status   { "status": 1 }
 **AI analysis** – the answer is validated (allowed categories, priorities and sentiments) and only then saved on the ticket:
 
 ```json
-{ "ticketId": "3f2b8c1e-...", "category": "Account Access", "priority": 2, "sentiment": "Frustrated",
+{ "ticketId": "3f2b8c1e-...", "category": 0, "priority": 2, "sentiment": "Frustrated",
   "summary": "The customer cannot sign in after resetting their password.",
   "suggestedAction": "Check account status and the password reset flow.", "provider": "Groq" }
 ```
 
-Allowed categories: Account Access, Billing, Technical Issue, Bug Report, Feature Request, General Inquiry, Other.
+The AI answers with a category name (Account Access, Billing, Technical Issue, Bug Report, Feature Request,
+General Inquiry, Other); the API checks it and stores the matching `TicketCategory` number (0–6).
 Allowed sentiments: Positive, Neutral, Negative, Frustrated, Angry.
 
 **Draft reply** – returned for human review, never saved or sent:
@@ -313,7 +320,14 @@ SupportDeskAI/                      ASP.NET Core Web API
   Constants/                        Allowed AI values
   Helpers/                          AiResponseParser, PersonalDataRedactor
   Middlewares/                      RequestLoggingMiddleware, GlobalExceptionHandler (IExceptionHandler, .NET 8+)
+  Configuration/                    ServiceRegistration: services shared by the API and the MCP server
   Migrations/                       EF Core migrations
+SupportDeskAI.Mcp/                  MCP server (stdio), references SupportDeskAI
+  Program.cs                        Host, settings, logs to stderr, same services, MCP server + tools
+  Tools/TicketTools.cs              The 8 MCP tools (argument checks + one service call each)
+  DTOs/                             Tool results with names instead of numbers
+  appsettings.json                  Database path (the API's supportdesk.db) and AI settings
+  mcp-client-config.example.json   Sample MCP client configuration
 SupportDeskAI.Tests/                xUnit tests
 ```
 
@@ -333,8 +347,8 @@ HTTP request
 
 ## Known limitations
 
-- **MCP server (FR-11 to FR-13) is not implemented yet.** The service layer already validates input itself,
-  so MCP tools can reuse `ITicketService` without duplicating business logic.
+- The MCP server supports the stdio transport only (streamable HTTP is optional in the requirements);
+  no MCP authentication, remote hosting or multi-user sessions (out of scope).
 - No authentication or authorization (out of scope for this project).
 - `PersonalDataRedactor` only removes emails and long numbers (phones, card numbers); names and addresses are
   still sent to the AI provider, so only test data should be used.

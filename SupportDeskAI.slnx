@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="SupportDeskAI.Mcp/SupportDeskAI.Mcp.csproj" />
   <Project Path="SupportDeskAI.Tests/SupportDeskAI.Tests.csproj" />
   <Project Path="SupportDeskAI/SupportDeskAI.csproj" />
 </Solution>
